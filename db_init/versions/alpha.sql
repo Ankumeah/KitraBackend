@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id SERIAL PRIMARY KEY,
+  sender INT REFERENCES users(id),
+  receiver INT REFERENCES users(id),
+  content VARCHAR(2000) NOT NULL,
+  timestamp TIMESTAMPTZ DEFAULT NOW()
+);

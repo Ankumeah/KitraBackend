@@ -1,0 +1,87 @@
+services:
+  api:
+    build:
+      context: ./kitra_backend/
+      dockerfile: Dockerfile_apis
+    volumes:
+      - ./kitra_backend/src/:/opt/kitra_backend/src/
+    env_file:
+      - ./.env.d/kitra_backend
+      - ./.env.d/postgres
+      - ./.env.d/redis
+    healthcheck:
+      test: ["CMD", "ping", "127.0.0.0:8000", "-w", "1"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+
+  ws:
+    build:
+      context: ./kitra_backend/
+      dockerfile: Dockerfile_apis
+    volumes:
+      - ./kitra_backend/src/:/opt/kitra_backend/src/
+    env_file:
+      - ./.env.d/kitra_backend
+      - ./.env.d/postgres
+      - ./.env.d/redis
+    healthcheck:
+      test: ["CMD", "ping", "127.0.0.0:8000", "-w", "1"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db_init:
+        condition: service_completed_successfully
+
+  db_init:
+    build: ./db_init/
+    volumes:
+      - ./db_init/versions/:/opt/db_init/versions/
+    env_file: ./.env.d/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:alpine
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    env_file: ./.env.d/postgres
+
+  redis:
+    build: ./redis/
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    env_file: ./.env.d/redis
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./nginx/:/opt/nginx/
+    depends_on:
+      api:
+        condition: service_healthy
+      ws:
+        condition: service_healthy
+    command: ["nginx", "-g", "daemon off;", "-c", "/opt/nginx/nginx.conf"]

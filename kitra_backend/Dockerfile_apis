@@ -1,0 +1,11 @@
+FROM python:alpine
+
+WORKDIR /opt/kitra_backend/
+COPY . .
+
+RUN pip3 install -r requirements.txt
+
+WORKDIR /opt/kitra_backend/src
+
+ENTRYPOINT [ "uvicorn", "--host", "0.0.0.0", "--port", "8000", "api:api" ]
+CMD [ "--workers", "4" ]

@@ -1,0 +1,6 @@
+.env.d/
+kitra_backend/.venv/
+kitra_backend/src/logs/
+**/__pycache__/
+nginx/.cert.pem
+nginx/.key.pem

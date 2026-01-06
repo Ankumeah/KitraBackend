@@ -1,0 +1,11 @@
+fastapi
+email_validator
+websockets
+psycopg[binary]
+psycopg_pool
+uvicorn
+redis
+google-auth
+requests
+python-json-logger
+pyyaml
