@@ -5,6 +5,7 @@ import time
 import logging
 
 from databases import postgres_database, redis_database, validations
+from databases.error import Error
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +34,15 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
     email: str = info.get("email", "")
 
     res = await postgres_db.is_email_in_database(email)
-    if res[0] != 0:
+    if isinstance(res, Error):
       logger.error(res)
       raise HTTPException(status_code = 500, detail = "An internal error happened")
 
-    if not res[1][0]:
-      res = await postgres_db.add_user(email)
+    res = await postgres_db.add_user(email)
 
-      if res[0] != 0:
-        logger.error(res)
-        raise HTTPException(status_code = 500, detail = "An internal error happened")
+    if isinstance(res, Error):
+      logger.error(res)
+      raise HTTPException(status_code = 500, detail = "An internal error happened")
 
     refresh_res = await redis_db.add_refresh_token_entry(email)
     if refresh_res[0] != 0:

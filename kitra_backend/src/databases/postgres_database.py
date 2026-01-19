@@ -3,27 +3,26 @@ from psycopg_pool import AsyncConnectionPool
 import os
 import logging
 
+from .error import Error
+
 class Database:
   logger = logging.getLogger(__name__)
 
   ADD_USER_QUERY: str = "INSERT INTO users (email) VALUES (%s);"
   IS_EMAIL_IN_DATABASE_QUERY: str = "SELECT email FROM users WHERE email = %s;"
   ADD_MESSAGE_QUERY: str = "INSERT INTO messages (sender, receiver, content) VALUES (%s, %s, %s) RETURNING (timestamp);"
-  GET_MESSAGES_QUERY: str = "SELECT * FROM messages WHERE (sender = %s AND receiver = %s) OR (sender = %s AND receiver = %s) ORDER BY timestamp;"
+  GET_NEW_MESSAGES_QUERY: str = "SELECT * FROM messages WHERE ((sender = %(user_a)s AND receiver = %(user_b)s) OR (sender = %(user_b)s AND receiver = %(user_a)s)) AND (timestamp > %(timestamp)s) ORDER BY timestamp;"
   GET_ID_FROM_EMAIL_QUERY: str = "SELECT id FROM users WHERE email = %s"
 
   def __init__(self):
-    self.POSTGRES_HOST: str = os.environ.get("POSTGRES_HOST", "")
-    self.POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "")
-    self.POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "")
-    self.POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "")
-    self.POSTGRES_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "")
-
-    if not self.POSTGRES_HOST: raise RuntimeError("POSTGRES_HOST not set")
-    if not self.POSTGRES_PORT: raise RuntimeError("POSTGRES_PORT not set")
-    if not self.POSTGRES_DB: raise RuntimeError("POSTGRES_DB not set")
-    if not self.POSTGRES_USER: raise RuntimeError("POSTGRES_USER not set")
-    if not self.POSTGRES_PASSWORD: raise RuntimeError("POSTGRES_PASSWORD not set")
+    try:
+      self.POSTGRES_HOST = os.environ["POSTGRES_HOST"]
+      self.POSTGRES_PORT = os.environ["POSTGRES_PORT"]
+      self.POSTGRES_DB = os.environ["POSTGRES_DB"]
+      self.POSTGRES_USER = os.environ["POSTGRES_USER"]
+      self.POSTGRES_PASSWORD = os.environ["POSTGRES_PASSWORD"]
+    except KeyError as e:
+      raise RuntimeError(f"{e.args[0]} not set")
 
     self.CONNINFO: str = f"""
       host={self.POSTGRES_HOST}
@@ -33,7 +32,7 @@ class Database:
       password={self.POSTGRES_PASSWORD}
     """
 
-  async def _execute(self, query, params: tuple = (), commit: bool = False) -> tuple[int, list]:
+  async def _execute(self, query, params: tuple = (), commit: bool = False) -> list | Error:
     """
     Use this interface to execute queries to the postgres database (only for internal use)
 
@@ -44,8 +43,11 @@ class Database:
 
     Returns:
       tuple[int, list]:
-        (0, fetchall) if commit is False,
+        (0, fetchall) if the query returned something,
         (1, [str(e)]) if error
+
+    Raises:
+      RuntimeError: If connection pool is not initalise
     """
 
     try:
@@ -65,9 +67,9 @@ class Database:
 
     except Exception as e:
       self.logger.error(str(e))
-      return (1, [str(e)])
+      return Error(error = str(e))
 
-    return (0, res)
+    return res
 
   async def init_db(self) -> tuple[int, str]:
     """
@@ -98,7 +100,7 @@ class Database:
 
     return (0, "Success")
 
-  async def add_user(self, email: str) -> tuple[int, str]:
+  async def add_user(self, email: str) -> None | Error:
     """
     Adds a new entry to the **users** table of the postgres database. No build in checks are performed except the database's own constraints
 
@@ -114,12 +116,10 @@ class Database:
 
     res = await self._execute(self.ADD_USER_QUERY, (email.lower(),), commit = True)
 
-    if res[0] != 0:
-      return (1, res[1][0])
+    if isinstance(res, Error):
+      return res
 
-    return (0, "Success")
-
-  async def is_email_in_database(self, email: str) -> tuple[int, list]:
+  async def is_email_in_database(self, email: str) -> bool | Error:
     """
     Checks if an **email** is in the postgres database
 
@@ -134,15 +134,15 @@ class Database:
 
     res = await self._execute(self.IS_EMAIL_IN_DATABASE_QUERY, (email.lower(),))
 
-    if res[0] != 0:
+    if isinstance(res, Error):
       return res
 
     if res[1]:
-      return (0, [True])
+      return True
     else:
-      return (0, [False])
+      return False
 
-  async def get_id_from_email(self, email: str) -> tuple[int, list]:
+  async def get_id_from_email(self, email: str) -> int | Error:
     """
     Returns the **id** matched with an **email** in the postgres database
 
@@ -157,17 +157,18 @@ class Database:
     """
 
     res = await self.is_email_in_database(email.lower())
-    if res[0] != 0:
+    if isinstance(res, Error):
       return res
-    elif not res[1][0]:
-      return (1, [f"{email} is not a valid user"])
+    elif not res:
+      return Error(error = f"{email} is not a valid user")
 
     res = await self._execute(self.GET_ID_FROM_EMAIL_QUERY, (email.lower(),))
-    if res[0] != 0:
+    if isinstance(res, Error):
       return res
-    return (0, res[1][0][0])
 
-  async def send_message(self, sender_email: str, receiver_email: str, content: str) -> tuple[int, int]:
+    return res[1][0][0]
+
+  async def send_message(self, sender_email: str, receiver_email: str, content: str) -> int | Error:
     """
     Add a new message to the **messages** table and returns its timestamp
 
@@ -184,25 +185,28 @@ class Database:
     """
 
     res = await self._execute(self.GET_ID_FROM_EMAIL_QUERY, (sender_email.lower(),))
-    if not res[1]:
-      return (1, 1)
-    if res[0] != 0:
-      return (-1, -1)
+    if isinstance(res, Error):
+      return -1
+    elif not res[1]:
+      return -2
 
     sender_id: int = res[1][0][0]
 
     res = await self._execute(self.GET_ID_FROM_EMAIL_QUERY, (receiver_email.lower(),))
-    if not res[1]:
-      return (1, 1)
-    if res[0] != 0:
-      return (-1, -1)
+    if isinstance(res, Error):
+      return -1
+    elif not res[1]:
+      return -2
 
     receiver_id: int = res[1][0][0]
 
     res = await self._execute(self.ADD_MESSAGE_QUERY, (sender_id, receiver_id, content))
-    if res[0] != 0:
-      return (-1, -1)
+    if isinstance(res, Error):
+      return -1
 
     timestamp: int = int(res[1][0][0].timestamp() // 1)
 
-    return (0, timestamp)
+    return timestamp
+
+  async def get_new_messages(self, email: str, last_message: int) -> list | Error:
+    ...
