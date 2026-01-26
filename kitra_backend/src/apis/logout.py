@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import logging
 
 from databases import redis_database
+from databases.error import Error
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,11 @@ def get_router(redis_db: redis_database.RedisDatabase) -> APIRouter:
       raise HTTPException(status_code = 400, detail = "Provide a refresh_token")
 
     res = await redis_db.remove_user_session(email, refresh_token)
-    if res[0] != 0:
-      if res[0] == -1:
-        logger.error(res[1])
-        raise HTTPException(status_code = 500, detail = "An internal server error happened")
-      else:
-        raise HTTPException(status_code = 400, detail = res[1])
+    if isinstance(res, Error):
+      logger.error(res.error)
+      raise HTTPException(status_code = 500, detail = "An internal server error happened")
+    elif not res:
+      raise HTTPException(status_code = 400, detail = "Invalid email or refresh_token")
 
     return LogoutResponse(message = "Success")
 

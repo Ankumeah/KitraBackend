@@ -46,19 +46,23 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
       raise HTTPException(status_code = 500, detail = "An internal error happened")
 
     refresh_res = await redis_db.add_refresh_token_entry(email)
-    if refresh_res[0] != 0:
-      raise HTTPException(status_code = 401, detail = refresh_res[1])
+    if isinstance(refresh_res, Error):
+      raise HTTPException(status_code = 500, detail = refresh_res.error)
+    elif refresh_res == "-1":
+      raise HTTPException(status_code = 401, detail = "Invalid email or too many refresh tokens")
     refresh_token_expire: float = int(time.time()) + redis_db.REFRESH_TOKEN_EXPIRY
 
-    session_res = await redis_db.add_session_token_entry(email, refresh_res[1])
-    if session_res[0] != 0:
-      raise HTTPException(status_code = 401, detail = session_res[1])
+    session_res = await redis_db.add_session_token_entry(email, refresh_res)
+    if isinstance(session_res, Error):
+      raise HTTPException(status_code = 500, detail = session_res.error)
+    elif session_res == "-1":
+      raise HTTPException(status_code = 401, detail = "Invalid email or too many session tokens")
     session_token_expire: float = int(time.time()) + redis_db.SESSION_TOKEN_EXPIRY
 
     return LoginResponse(
-      session_token = session_res[1],
+      session_token = session_res,
       session_token_expire = session_token_expire,
-      refresh_token = refresh_res[1],
+      refresh_token = refresh_res,
       refresh_token_expire = refresh_token_expire
     )
 

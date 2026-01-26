@@ -52,13 +52,14 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
     if pool.is_duplicate_session(first_model.email, first_model.session_token):
       raise WebSocketException(status.WS_1007_INVALID_FRAME_PAYLOAD_DATA)
 
-    res: tuple[int, str] = await redis_db.is_session_token_valid(first_model.email, first_model.session_token)
-    match res[0]:
-      case 0: pool.add_connection(socket, first_model.email, first_model.session_token)
-      case 1: raise WebSocketException(status.WS_1008_POLICY_VIOLATION)
-      case _:
-        logger.error(res[1])
-        raise WebSocketException(status.WS_1011_INTERNAL_ERROR)
+    res: bool | Error = await redis_db.is_session_token_valid(first_model.email, first_model.session_token)
+    if isinstance(res, Error):
+      logger.error(res.error)
+      raise WebSocketException(status.WS_1011_INTERNAL_ERROR)
+    elif not res:
+      raise WebSocketException(status.WS_1008_POLICY_VIOLATION)
+    else:
+      pool.add_connection(socket, first_model.email, first_model.session_token)
 
     return first_model
 
@@ -71,14 +72,14 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
     if len(model.content) > 2000:
       raise WebSocketException(status.WS_1007_INVALID_FRAME_PAYLOAD_DATA)
 
-    res: tuple[int, str] = await redis_db.is_session_token_valid(first_model.email, model.session_token)
-    if res[0] == 1:
-      raise WebSocketException(status.WS_1008_POLICY_VIOLATION)
-    elif res[0] == 0:
-      return model
-    else:
-      logger.error(res[1])
+    res: bool | Error = await redis_db.is_session_token_valid(first_model.email, model.session_token)
+    if isinstance(res, Error):
+      logger.error(res.error)
       raise WebSocketException(status.WS_1011_INTERNAL_ERROR)
+    if not res:
+      raise WebSocketException(status.WS_1008_POLICY_VIOLATION)
+    else:
+      return model
 
   @api.websocket("/exchange_messages")
   async def exchange_messages(socket: WebSocket):
