@@ -5,6 +5,7 @@ import hashlib
 import logging
 
 from . import validations
+from .error import Error
 
 class RedisDatabase:
   logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ class RedisDatabase:
       password = self.REDIS_REFRESH_USER_PASSWORD
     )
 
-  async def get_session_token_id(self, email: str, refresh_token: str) -> tuple[int, str | int]:
+  async def get_session_token_id(self, email: str, refresh_token: str) -> int | Error:
     """
     Checks if **refresh_token** is valid and returns its id
 
@@ -56,28 +57,24 @@ class RedisDatabase:
       refresh_token (str): The **refresh_token** that is to be compaired
 
     Returns:
-      tuple[int, int]:
-        (1, "message") if **email** is invalid or **refresh_token** is not provided,
-        (0, id) if **refresh_token** is valid,
-        (1, "False") if **refresh_token** is not valid,
-        (-1, "message") if an error happened
+      int | Error:
+        id (int): if **refresh_token** is valid,
+        -1 (int): if **refresh_token** is not valid,
+        Error(str(e)): if an error happened
     """
-
-    if not validations.is_valid_email(email): return (1, "Provide a valid email")
-    if not refresh_token: return (1, "Provide a refresh_token")
 
     async for token in self.REDIS_REFRESH_USER.scan_iter(f"refresh:{email}:*:refresh_token"):
       try:
         val = await self.REDIS_REFRESH_USER.get(token)
         if isinstance(val, bytes) and hashlib.sha256(refresh_token.encode()).digest() == val:
-          return (0, token)
+          return token
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "False")
+    return -1
 
-  async def is_refresh_token_valid(self, email: str, refresh_token: str) -> tuple[int, str]:
+  async def is_refresh_token_valid(self, email: str, refresh_token: str) -> bool | Error:
     """
     Checks if **session_token** is valid
 
@@ -86,28 +83,24 @@ class RedisDatabase:
       refresh_token (str): The **session_token** that is to be compaired
 
     Returns:
-      tuple[int, str]:
-        (1, "message") if **email** is invalid or **refresh_token** is not provided,
-        (0, "True") if **session_token** is valid,
-        (1, "False") if **session_token** is not valid,
-        (-1, "message") if an error happened
+      bool | Error:
+        True (bool): if **session_token** is valid,
+        False (bool): if **session_token** is not valid,
+        Error(str(e)): if an error happened
     """
-
-    if not validations.is_valid_email(email): return (1, "Provide a valid email")
-    if not refresh_token: return (1, "Provide a refresh_token")
 
     async for token in self.REDIS_REFRESH_USER.scan_iter(f"refresh:{email}:*:refresh_token"):
       try:
         val = await self.REDIS_SESSION_USER.get(token)
         if isinstance(val, bytes) and hashlib.sha256(refresh_token.encode()).digest() == val:
-          return (0, "True")
+          return True
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "False")
+    return False
 
-  async def is_session_token_valid(self, email: str, session_token: str) -> tuple[int, str]:
+  async def is_session_token_valid(self, email: str, session_token: str) -> bool | Error:
     """
     Checks if **session_token** is valid
 
@@ -116,28 +109,24 @@ class RedisDatabase:
       refresh_token (str): The **session_token** that is to be compaired
 
     Returns:
-      tuple[int, str]:
-        (1, "message") if **email** is invalid or **refresh_token** is not provided,
-        (0, "True") if **session_token** is valid,
-        (1, "False") if **session_token** is not valid,
-        (-1, "message") if an error happened
+      bool | Error:
+        True: if **session_token** is valid,
+        False: if **session_token** is not valid,
+        Error(str(e)): if an error happened
     """
-
-    if not validations.is_valid_email(email): return (1, "Provide a valid email")
-    if not session_token: return (1, "Provide a session_token")
 
     async for token in self.REDIS_SESSION_USER.scan_iter(f"session:{email}:*"):
       try:
         val = await self.REDIS_SESSION_USER.get(token)
         if isinstance(val, bytes) and hashlib.sha256(session_token.encode()).digest() == val:
-          return (0, "True")
+          return True
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "False")
+    return False
 
-  async def add_refresh_token_entry(self, email: str) -> tuple[int, str]:
+  async def add_refresh_token_entry(self, email: str) -> str | Error:
     """
     Adds a new **refresh_token** for the provided **email**
 
@@ -145,14 +134,14 @@ class RedisDatabase:
       email (str): The email for which the **refresh_token** is to be created
 
     Returns:
-      tuple[int, str]:
-        (1, "message") if **email** is invalid or number of pre existing **refresh_token** exceed **self.MAX_ALLOWED_REFRESH_TOKENS**,
-        (0, refresh_token) if successful,
-        (-1, "message") if an error happened
+      str | Error:
+        "-1" (str): if **email** is invalid or number of pre existing **refresh_token** exceed **self.MAX_ALLOWED_REFRESH_TOKENS**,
+        refresh_token (str): if successful,
+        Error(str(e)): if an error happened
     """
 
     if not validations.is_valid_email(email):
-      return (1, "Provide a valid email")
+      return "-1"
 
     refresh_token: str = secrets.token_urlsafe(self.REFRESH_TOKEN_LENGTH)
     hashed_refresh_token: bytes = hashlib.sha256(refresh_token.encode()).digest()
@@ -162,14 +151,14 @@ class RedisDatabase:
         val = await self.REDIS_REFRESH_USER.get(f"refresh:{email}:{i}:refresh_token")
         if not val:
           await self.REDIS_REFRESH_USER.setex(name = f"refresh:{email}:{i}:refresh_token", value = hashed_refresh_token, time = self.REFRESH_TOKEN_EXPIRY)
-          return (0, refresh_token)
+          return refresh_token
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "Too many refresh_tokens")
+    return "-1"
 
-  async def add_session_token_entry(self, email: str, refresh_token) -> tuple[int, str]:
+  async def add_session_token_entry(self, email: str, refresh_token: str) -> str | Error:
     """
     Adds a new **session_token** for the provided **email** which is linked to the provided **refresh_token**, the refresh_token is validated
 
@@ -178,27 +167,24 @@ class RedisDatabase:
       refresh_token (str): The **refresh_token** which issued the **session_token**, this is validated
 
     Returns:
-      tuple[int, str]:
-        (1, "message") if **email** or **refresh_token** is invalid or number of pre existing **session_token** exceed **self.MAX_ALLOWED_SESSION_TOKENS**,
-        (0, session_token) if successful,
-        (-1, "message") if an error happened
+      str | Error:
+        "-1": if **email** or **refresh_token** is invalid or number of pre existing **session_token** exceed **self.MAX_ALLOWED_SESSION_TOKENS**,
+        session_token: if successful,
+        Error(str(e)): if an error happened
     """
 
     if not validations.is_valid_email(email):
-      return (1, "Provide a valid email")
+      return "-1"
 
     refresh_token_id: str = ""
 
     val = await self.get_session_token_id(email, refresh_token)
-    if val[0] == -1:
-      return (-1, str(val[1]))
-    elif val[0] == 1:
-      if val[1] == "False":
-        return (1, "Invalid refresh_token")
-      else:
-        return (1, "Provide a valid email")
-    elif val[0] == 0:
-      refresh_token_id = str(val[1])
+    if isinstance(val, Error):
+      return val
+    elif val == -1:
+      return "-1"
+    else:
+      refresh_token_id = str(val)
 
     session_token: str = secrets.token_urlsafe(self.SESSION_TOKEN_LENGTH)
     hashed_session_token: bytes = hashlib.sha256(session_token.encode()).digest()
@@ -217,14 +203,14 @@ class RedisDatabase:
             value = f"session:{email}:{i}",
             time = self.SESSION_TOKEN_EXPIRY
           )
-          return (0, session_token)
+          return session_token
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "Too many session_tokens")
+    return "-1"
 
-  async def remove_user_session(self, email: str, refresh_token: str) -> tuple[int, str]:
+  async def remove_user_session(self, email: str, refresh_token: str) -> bool | Error:
     """
     Removes both the given **refresh_token** and its corresponding **session_token** for the given email if the **refresh_token** is valid
 
@@ -233,18 +219,18 @@ class RedisDatabase:
       refresh_token: The refresh_token that is verified, this is also deleted
 
     Returns:
-      tuple[int, str]:
-        (0, "Success") if successful,
-        (1, "message") if **email** or **refresh_token** is not valid,
-        (-1, "message") if an error happened
+      bool | Error:
+        True (bool): if successful,
+        False (bool): if **email** or **refresh_token** is not valid,
+        Error(str(e)): if an error happened
     """
 
     if not validations.is_valid_email(email):
-      return (1, "Provide a valid email")
+      return False
 
     val = await self.get_session_token_id(email, refresh_token)
-    if val[0] != 0:
-      return (1, "refresh_token is invalid")
+    if not isinstance(val, Error) or val == -1:
+      return False
 
     for i in range(self.MAX_ALLOWED_REFRESH_TOKENS):
       try:
@@ -254,9 +240,9 @@ class RedisDatabase:
             await self.REDIS_REFRESH_USER.delete(token)
 
           await self.REDIS_REFRESH_USER.delete(f"refresh:{email}:{i}:refresh_token")
-          return (0, "Success")
+          return True
       except Exception as e:
         self.logger.error(str(e))
-        return (-1, str(e))
+        return Error(error = str(e))
 
-    return (1, "Provide a refresh_token")
+    return False

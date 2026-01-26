@@ -5,6 +5,7 @@ import logging
 import time
 
 from databases import redis_database
+from databases.error import Error
 
 logger = logging.getLogger(__name__)
 
@@ -30,25 +31,21 @@ def get_router(redis_db: redis_database.RedisDatabase) -> APIRouter:
       raise HTTPException(status_code = 400, detail = "Provide a refresh_token")
 
     res = await redis_db.is_refresh_token_valid(email, refresh_token)
-    if res[0] != 0:
-      if res[0] == -1:
-        logger.error(res[1])
-        raise HTTPException(status_code = 500, detail = "An internal server error happened")
-      elif res[1] == "False":
-        raise HTTPException(status_code = 401, detail = "refresh_token is invalid")
-      else:
-        raise HTTPException(status_code = 400, detail = res[1])
+    if isinstance(res, Error):
+      logger.error(res.error)
+      raise HTTPException(status_code = 500, detail = "An internal server error happened")
+    elif not res:
+      raise HTTPException(status_code = 401, detail = "refresh_token is invalid")
 
     res = await redis_db.add_refresh_token_entry(email)
     expire: int = int(time.time()) + redis_db.REFRESH_TOKEN_EXPIRY
 
-    if res[0] != 0:
-      if res[0] == -1:
-        logger.error(res[1])
-        raise HTTPException(status_code = 500, detail = "An internal server error happened")
-      else:
-        raise HTTPException(status_code = 401, detail = res[1])
+    if isinstance(res, Error):
+      logger.error(res.error)
+      raise HTTPException(status_code = 500, detail = "An internal server error happened")
+    elif res == "-1":
+      raise HTTPException(status_code = 401, detail = "Invalid email or too many refresh_tokens")
 
-    return RenewRefreshTokenResponse(refresh_token = res[1], refresh_token_expire = expire)
+    return RenewRefreshTokenResponse(refresh_token = res, refresh_token_expire = expire)
 
   return api
