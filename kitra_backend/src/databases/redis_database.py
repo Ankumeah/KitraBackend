@@ -107,7 +107,6 @@ class RedisDatabase:
 
     return (1, "False")
 
-
   async def is_session_token_valid(self, email: str, session_token: str) -> tuple[int, str]:
     """
     Checks if **session_token** is valid
