@@ -38,7 +38,8 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
       logger.error(res)
       raise HTTPException(status_code = 500, detail = "An internal error happened")
 
-    res = await postgres_db.add_user(email)
+    if not res:
+      res = await postgres_db.add_user(email)
 
     if isinstance(res, Error):
       logger.error(res)

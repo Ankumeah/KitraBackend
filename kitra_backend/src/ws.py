@@ -52,6 +52,9 @@ async def lifespan(ws: FastAPI):
   logger.info("Clearing all websocket connections")
   await wss.exchange_messages.pool.remove_all_clients()
 
+  logger.info("Closeing database pool")
+  await postgres_db.POSTGRES_POOL.close()
+
   logger.info("WS worker stopped")
 
 ws = FastAPI(

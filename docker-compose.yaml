@@ -25,7 +25,7 @@ services:
   ws:
     build:
       context: ./kitra_backend/
-      dockerfile: Dockerfile_apis
+      dockerfile: Dockerfile_wss
     volumes:
       - ./kitra_backend/src/:/opt/kitra_backend/src/
     env_file:

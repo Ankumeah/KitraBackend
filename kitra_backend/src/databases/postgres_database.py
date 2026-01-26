@@ -42,9 +42,9 @@ class Database:
       commit (bool, optional): This specifies whether or not to commit the query. Defaults to False
 
     Returns:
-      tuple[int, list]:
-        (0, fetchall) if the query returned something,
-        (1, [str(e)]) if error
+      list | Error:
+        fetchall: if the query returned something,
+        Error(str(e)): if error
 
     Raises:
       RuntimeError: If connection pool is not initalise
@@ -80,8 +80,8 @@ class Database:
 
     Returns:
       tuple[int, str]:
-        (0, "Success") if successful,
-        (1, str(e)) if error
+        (0, "Success"): if successful,
+        (1, str(e)): if error
     """
 
     try:
@@ -109,9 +109,9 @@ class Database:
       email (str): Email of the user. Is unique in the database
 
     Returns:
-      tuple[int, str]:
-        (0, "Success") if successful,
-        (1, str(e)) if error
+      None | Error:
+        None: if successful,
+        Error(str(e)): if error
     """
 
     res = await self._execute(self.ADD_USER_QUERY, (email.lower(),), commit = True)
@@ -127,9 +127,9 @@ class Database:
       email (str): The email to be checked
 
     Returns:
-      tuple[int, list]:
-        (0, [ans (bool)]) if successful,
-        (1, [str(e)]) if error
+      bool | Error:
+        res (bool): if successful,
+        Error(str(e)): if error
     """
 
     res = await self._execute(self.IS_EMAIL_IN_DATABASE_QUERY, (email.lower(),))
@@ -137,7 +137,7 @@ class Database:
     if isinstance(res, Error):
       return res
 
-    if res[1]:
+    if res:
       return True
     else:
       return False
@@ -150,10 +150,10 @@ class Database:
       email (str): The email whose id is to be returned
 
     Returns:
-      tuple[int, list]:
-        (1, ["messages"]) if no email is provided or the email is not in the database,
-        (1, [str(e)]) if error,
-        (0, [id (int)]) if successful
+      int | Error:
+        Error("messages"): if no email is provided or the email is not in the database,
+        Error(str(e)): if error,
+        id (int): if successful
     """
 
     res = await self.is_email_in_database(email.lower())
@@ -166,9 +166,9 @@ class Database:
     if isinstance(res, Error):
       return res
 
-    return res[1][0][0]
+    return res[0][0]
 
-  async def send_message(self, sender_email: str, receiver_email: str, content: str) -> int | Error:
+  async def send_message(self, sender_email: str, receiver_email: str, content: str) -> int:
     """
     Add a new message to the **messages** table and returns its timestamp
 
@@ -178,33 +178,33 @@ class Database:
       content (str): The content of the message to be added
 
     Returns:
-      tuple[int, tuple[int, str] | int]:
-        (0, (timestamp, content)) if successful,
-        (1, 1) if either of the users are not in the database,
-        (-1, -1) if error
+      int | Error:
+        timestamp (int) if successful,
+        -2 (int): if either of the users are not in the database,
+        -1 (int): if error
     """
 
     res = await self._execute(self.GET_ID_FROM_EMAIL_QUERY, (sender_email.lower(),))
     if isinstance(res, Error):
       return -1
-    elif not res[1]:
+    elif not res:
       return -2
 
-    sender_id: int = res[1][0][0]
+    sender_id: int = res[0][0]
 
     res = await self._execute(self.GET_ID_FROM_EMAIL_QUERY, (receiver_email.lower(),))
     if isinstance(res, Error):
       return -1
-    elif not res[1]:
+    elif not res:
       return -2
 
-    receiver_id: int = res[1][0][0]
+    receiver_id: int = res[0][0]
 
     res = await self._execute(self.ADD_MESSAGE_QUERY, (sender_id, receiver_id, content))
     if isinstance(res, Error):
       return -1
 
-    timestamp: int = int(res[1][0][0].timestamp() // 1)
+    timestamp: int = int(res[0][0].timestamp() // 1)
 
     return timestamp
 
