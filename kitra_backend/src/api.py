@@ -47,6 +47,10 @@ async def lifespan(api: FastAPI):
 
   logger.info("new API worker started")
   yield
+
+  logger.info("Closeing database pool")
+  await postgres_db.POSTGRES_POOL.close()
+
   logger.info("API worker stopped")
 
 api = FastAPI(

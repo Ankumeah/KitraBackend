@@ -13,8 +13,9 @@ from databases import (
   redis_database,
   postgres_database,
   websocket_manager,
-  validations
+  validations,
 )
+from databases.error import Error
 
 logger = logging.getLogger(__name__)
 
@@ -94,16 +95,16 @@ def get_router(postgres_db: postgres_database.Database, redis_db: redis_database
 
         model: Request = await validate_message(data, first_model)
 
-        res_msg: tuple[int, int] = await postgres_db.send_message(first_model.email, model.receiver_email, model.content)
-        if res_msg[0] == 1:
+        res_msg: int | Error = await postgres_db.send_message(first_model.email, model.receiver_email, model.content)
+        if isinstance(res_msg, Error):
           raise WebSocketException(status.WS_1007_INVALID_FRAME_PAYLOAD_DATA)
-        elif res_msg[0] == 0:
-          for client in pool.get_clients(model.receiver_email):
-            await client.send_json(Response(
-              sender_email = first_model.email,
-              content = model.content,
-              unix_time = res_msg[1]
-            ).model_dump())
+
+        for client in pool.get_clients(model.receiver_email):
+          await client.send_json(Response(
+            sender_email = first_model.email,
+            content = model.content,
+            unix_time = res_msg
+          ).model_dump())
 
     except WebSocketDisconnect:
       logger.debug(f"Client Disconnected {socket.client}")

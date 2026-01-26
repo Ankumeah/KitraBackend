@@ -77,6 +77,36 @@ class RedisDatabase:
 
     return (1, "False")
 
+  async def is_refresh_token_valid(self, email: str, refresh_token: str) -> tuple[int, str]:
+    """
+    Checks if **session_token** is valid
+
+    Args:
+      email (str): The email against whome the **refresh_token** is to be compaired
+      refresh_token (str): The **session_token** that is to be compaired
+
+    Returns:
+      tuple[int, str]:
+        (1, "message") if **email** is invalid or **refresh_token** is not provided,
+        (0, "True") if **session_token** is valid,
+        (1, "False") if **session_token** is not valid,
+        (-1, "message") if an error happened
+    """
+
+    if not validations.is_valid_email(email): return (1, "Provide a valid email")
+    if not refresh_token: return (1, "Provide a refresh_token")
+
+    async for token in self.REDIS_REFRESH_USER.scan_iter(f"refresh:{email}:*:refresh_token"):
+      try:
+        val = await self.REDIS_SESSION_USER.get(token)
+        if isinstance(val, bytes) and hashlib.sha256(refresh_token.encode()).digest() == val:
+          return (0, "True")
+      except Exception as e:
+        self.logger.error(str(e))
+        return (-1, str(e))
+
+    return (1, "False")
+
   async def is_session_token_valid(self, email: str, session_token: str) -> tuple[int, str]:
     """
     Checks if **session_token** is valid
@@ -162,7 +192,7 @@ class RedisDatabase:
     val = await self.get_session_token_id(email, refresh_token)
     if val[0] == -1:
       return (-1, str(val[1]))
-    elif val[0] == [1]:
+    elif val[0] == 1:
       if val[1] == "False":
         return (1, "Invalid refresh_token")
       else:
